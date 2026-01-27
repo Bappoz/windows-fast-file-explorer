@@ -2,7 +2,7 @@
 
 use dashmap::mapref::entry;
 use walkdir::{DirEntry, WalkDir};
-use std::{fs::{File, Metadata}, path::{Path, PathBuf}};
+use std::{fmt::format, fs::{File, Metadata}, path::{Path, PathBuf}};
 use serde::{Serialize, Deserialize};
 
 #[cfg(windows)]
@@ -14,10 +14,17 @@ enum EntryType {
     Dir  { child_count: usize },
 }
 
+// Defini um resultado para um clique
+pub enum ClickResult {
+    OpenedFolder(Vec<FileMetadata>),
+    OpenedFile,
+    Error(String),
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FileMetadata {
-    name: String,
-    path: PathBuf,
+    pub name: String,
+    pub path: PathBuf,
     kind: EntryType,
 }
 
@@ -68,21 +75,40 @@ impl FileMetadata {
         PathBuf::from(cleaned)
     }
 
-    pub fn list_all_by_path(path: &str) -> Vec<FileMetadata> {
-        let node_path = FileMetadata::clean_path(path);
+    pub fn list_all_by_path(path: &Path) -> Vec<FileMetadata> {
 
-        WalkDir::new(node_path)
+        WalkDir::new(path)
             .min_depth(1)
             .max_depth(1)
             .into_iter()
             .filter_entry(|e| !FileMetadata::is_hidden(e))
             .filter_map(|res| res.ok())             
-            .inspect(|entry|{
-                let kind = if entry.file_type().is_dir() { "Directory" }
-                    else { "File" };
-                println!("Type: {:?}, name: {:?}", kind, entry.file_name());
-            })
             .map(|entry| FileMetadata::from_entry(&entry))
             .collect()
     } 
+
+    pub fn open(&self) -> ClickResult {
+        if self.is_dir() {
+            let items = FileMetadata::list_all_by_path(&self.path);
+            ClickResult::OpenedFolder(items)
+        } else {
+            match std::process::Command::new("explorer").arg(&self.path).spawn() {
+                Ok(_) => ClickResult::OpenedFile,
+                Err(e) => ClickResult::Error(e.to_string()),
+            }
+        }
+    }    
+
+
+    // Formatador de tamanho
+    pub fn size_str(&self) -> String {
+        match self.kind {
+            EntryType::File { size,..} => {
+                if size < 1024 { format!("{} B", size)}
+                else if size < 1048576 { format!("{:.1} KB", size as f64 / 1024.0)}
+                else {format!("{:.1} MB", size as f64 / 1048576.0)}
+            },
+            EntryType::Dir { .. } => String::from("<DIR>")
+        }
+    }
 }

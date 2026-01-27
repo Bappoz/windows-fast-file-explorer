@@ -1,19 +1,45 @@
-use file_explorer_windows::core::file_metadata::FileMetadata;
-use walkdir::WalkDir;
+use std::io::{self, Write};
+use std::path::Path;
+use file_explorer_windows::core::file_metadata::{ClickResult, FileMetadata};
 
 fn main() {
-    let path = "src";
-    
-    // Get the DirEntry for the path
-    if let Some(Ok(entry)) = WalkDir::new(path).into_iter().next() {
-        FileMetadata::from_entry(&entry);
+    let mut start_path = String::from("C:\\Users");
+    let mut list = FileMetadata::list_all_by_path(Path::new(&start_path));
+
+    loop {
+        println!("PASTA ATUAL: {}", start_path);
+
+        for (i, item) in list.iter().enumerate() {
+            let prefixo = if item.is_dir() { "[DIR]" } else { "[FILE]" };
+            println!("{}: {} {}", i, prefixo, item.name);
+        }
+
+        print!("\nDigite o número para abrir (ou 'q' para sair): ");
+        io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+        let input = input.trim();
+
+        if input == "q" {break;}
+
+        if let Ok(idx) = input.parse::<usize>() {
+            if let Some(escolhido) = list.get(idx) {
+                match escolhido.open() {
+                    ClickResult::OpenedFolder(new_items) => {
+                        start_path = escolhido.path.to_string_lossy().to_string();
+                        println!("Entrando em...");
+                        list = new_items;
+                    },
+                    ClickResult::OpenedFile => println!("Arquivo aberto no Windows. Continuando na mesma pasta..."),
+                    ClickResult::Error(e) => eprintln!("Erro ao abrir: {}", e),
+                }
+            }
+        } else {
+            println!("Invalid Entry");
+        }
     }
-    
-    FileMetadata::list_all_by_path(path);
 }
-
-
-
 
 
 
