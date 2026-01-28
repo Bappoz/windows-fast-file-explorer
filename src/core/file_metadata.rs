@@ -1,5 +1,7 @@
 #![allow(unused_imports)]
 
+use std::time::SystemTime;
+use chrono::{DateTime, Local};
 use dashmap::mapref::entry;
 use walkdir::{DirEntry, WalkDir};
 use std::{fmt::format, fs::{File, Metadata}, path::{Path, PathBuf}};
@@ -29,6 +31,29 @@ pub struct FileMetadata {
 }
 
 impl FileMetadata {
+
+    pub fn from_path(path: PathBuf) -> Self {
+        let name = path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string_lossy().to_string());
+
+        let metadata = std::fs::metadata(&path);
+        let is_dir = path.is_dir();
+
+        let kind = if is_dir {
+            EntryType::Dir { child_count: 0 }
+        } else {
+            let extension = path.extension()
+                .map(|e| e.to_string_lossy().to_string())
+                .unwrap_or_default();
+            
+            let size = metadata.map(|m| m.len()).unwrap_or(0);
+            EntryType::File { size, extension }
+        };
+
+        FileMetadata { name, path, kind }
+    }
+
     // Contrutor do FileMetadata
     pub fn from_entry(entry: &DirEntry) -> Self {
         let path = entry.path().to_path_buf();
@@ -86,6 +111,18 @@ impl FileMetadata {
             .map(|entry| FileMetadata::from_entry(&entry))
             .collect()
     } 
+
+    pub fn modified_str(&self) -> String{
+        let metadata = std::fs::metadata(&self.path);
+        if let Ok(m) = metadata {
+            if let Ok(time) = m.modified() {
+                let dt: DateTime<Local> = time.into();
+                return dt.format("&d/%m/%Y %H:%M").to_string();
+            }
+        }
+        "--/--/----".to_string()
+    }
+
 
     pub fn open(&self) -> ClickResult {
         if self.is_dir() {
